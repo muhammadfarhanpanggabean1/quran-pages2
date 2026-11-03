@@ -1,8 +1,11 @@
 name: Ekstrak Zip
 
-# Semua file .zip di repo (folder mana pun, termasuk mode-l/ dan mode-p/)
-# diekstrak ke root repo dengan struktur folder di dalam zip dipertahankan,
-# lalu file zip-nya dihapus.
+# Setiap file .zip diekstrak ke FOLDER TEMPAT ZIP ITU BERADA, lalu zip-nya dihapus.
+#   mode-l/juz-2.zip  -> hasil masuk ke mode-l/
+#   mode-p/juz-2.zip  -> hasil masuk ke mode-p/
+#   zip di root repo  -> hasil masuk ke root repo
+# Kalau di dalam zip ada folder teratas dengan nama yang sama dengan folder zip
+# (mis. mode-l/ di dalam mode-l/juz-2.zip), folder itu tidak digandakan.
 # Jalan otomatis saat ada zip yang di-push, atau manual lewat Run workflow.
 
 on:
@@ -25,7 +28,7 @@ jobs:
       - name: Ambil repo
         uses: actions/checkout@v4
 
-      - name: Ekstrak semua zip di repo
+      - name: Ekstrak tiap zip ke foldernya masing-masing
         run: |
           mapfile -d '' zips < <(find . -type f -iname '*.zip' -not -path './.git/*' -print0 | sort -z)
           if [ ${#zips[@]} -eq 0 ]; then
@@ -33,9 +36,21 @@ jobs:
             exit 0
           fi
           for z in "${zips[@]}"; do
-            echo "Mengekstrak: $z"
-            unzip -o -q "$z" -x '__MACOSX/*' '*/.DS_Store' '.DS_Store' -d . || echo "GAGAL: $z"
-            git rm -q -f -- "$z"
+            dir=$(dirname "$z")
+            base=$(basename "$dir")
+            echo "Mengekstrak: $z -> $dir/"
+            tmp=$(mktemp -d)
+            if unzip -o -q "$z" -x '__MACOSX/*' '*/.DS_Store' '.DS_Store' -d "$tmp"; then
+              if [ "$dir" != "." ] && [ -d "$tmp/$base" ]; then
+                cp -a "$tmp/$base/." "$dir/"
+                rm -rf "$tmp/$base"
+              fi
+              cp -a "$tmp/." "$dir/"
+              git rm -q -f -- "$z"
+            else
+              echo "GAGAL: $z (zip dibiarkan)"
+            fi
+            rm -rf "$tmp"
           done
 
       - name: Commit hasil ekstrak
